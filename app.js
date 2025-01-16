@@ -5,29 +5,16 @@ const CONFIG = require('./config.json');
 const app = express();
 const PORT = 3000;
 
-// Middleware to parse JSON body
 app.use(express.json());
-
-let printerConfig = {
-    type: PrinterTypes.EPSON,
-    interface: `printer:${CONFIG.printer_name}`,
-    driver: require('@thiagoelg/node-printer')
-}
-
-if (CONFIG.paper_size === 48) {
-    printerConfig['width'] = 30;
-}
-
-let printer = new ThermalPrinter(printerConfig);
 
 app.get('/get-printer', (req, res) => {
     return res.status(200).json({ message: 'success', data: { name: CONFIG.printer_name } });
 });
 
 app.post('/print', async (req, res) => {
-    const {trx_date, order_number, user, shipping_method, products, subtotal, tax, total, cash, payment_status} = req.body;
+    const {storeName, phone, storeAddress, date, orderNumber, user, typeOrder, items, subtotal, tax, total, amount, paymentStatus} = req.body;
     
-    const dateObj = new Date(trx_date);
+    const dateObj = new Date(date);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
     const day = String(dateObj.getDate()).padStart(2, '0');
@@ -38,6 +25,18 @@ app.post('/print', async (req, res) => {
     const parsedTrxTime = dateObj.toTimeString().split(' ')[0];
 
     try {
+	    let printerConfig = {
+            type: PrinterTypes.EPSON,
+            interface: `printer:${CONFIG.printer_name}`,
+            driver: require('@thiagoelg/node-printer')
+	    }
+
+        if (CONFIG.paper_size === 48) {
+            printerConfig['width'] = 30;
+        }
+
+	    let printer = new ThermalPrinter(printerConfig);
+
         const isConnected = await printer.isPrinterConnected();
         if (!isConnected) {
             console.error('Printer is not connected');
@@ -47,9 +46,12 @@ app.post('/print', async (req, res) => {
         // Header
         printer.alignCenter();
         await printer.printImage('./assets/logo.png');
-        printer.println(`\n${CONFIG.merchant_name}`);
-        printer.println(`${CONFIG.merchant_address}`);
-        printer.println(`${CONFIG.merchant_phone}`);
+        // printer.println(\n${CONFIG.merchant_name});
+	    printer.println(`\n${(storeName || '-')}`);
+        // printer.println(${CONFIG.merchant_address});
+	    printer.println(storeAddress || '-');
+        // printer.println(${CONFIG.merchant_phone});
+	    printer.println(phone || '-');
 
         // Order detail
         printer.drawLine();
@@ -59,31 +61,33 @@ app.post('/print', async (req, res) => {
         ]);
         printer.tableCustom([
             { text: "Transaksi", align: "LEFT", width: 0.5 },
-            { text: order_number, align: "RIGHT", width: 0.5 }
+            { text: orderNumber || '-', align: "RIGHT", width: 0.5 }
         ]);
         printer.tableCustom([
             { text: "Kasir", align: "LEFT", width: 0.5 },
-            { text: user, align: "RIGHT", width: 0.5 }
+            // { text: user, align: "RIGHT", width: 0.5 }
+	    { text: '-', align: "RIGHT", width: 0.5 }
         ]);
         printer.tableCustom([
             { text: "Pelanggan", align: "LEFT", width: 0.5 },
             { text: "-", align: "RIGHT", width: 0.5 }
         ]);
 
-        // Shipping method
+        // Trx type
         printer.drawLine();
-        printer.println(shipping_method);
+        printer.println(typeOrder || '-');
         
         // Items
         printer.drawLine();
-        products.forEach(product => {
-            const { name, variant, qty, price, total } = product;
+        items.forEach(product => {
+            const { name, qty, price } = product;
+	    const total = qty * price;
             printer.tableCustom([
-                { text: `${name} - ${variant}`, align: "LEFT", width: 0.5 },
+                { text: `${(name || '-')}`, align: "LEFT", width: 0.5 },
                 { text: " ", align: "RIGHT", width: 0.5 }
             ]);
             printer.tableCustom([
-                { text: `${qty}x ${price}`, align: "LEFT", width: 0.5 },
+                { text: `${(qty || '0')}x ${(price || '0')}`, align: "LEFT", width: 0.5 },
                 { text: total, align: "RIGHT", width: 0.5 }
             ]);
 
@@ -99,24 +103,24 @@ app.post('/print', async (req, res) => {
         // Price
         printer.tableCustom([
             { text: "Subtotal", align: "LEFT", width: 0.5 },
-            { text: subtotal, align: "RIGHT", width: 0.5 }
+            { text: subtotal || '0', align: "RIGHT", width: 0.5 }
         ]);
         printer.tableCustom([
             { text: "Pajak (10%)", align: "LEFT", width: 0.5 },
-            { text: tax, align: "RIGHT", width: 0.5 }
+            { text: tax || '0', align: "RIGHT", width: 0.5 }
         ]);
         printer.tableCustom([
             { text: "Total", align: "LEFT", width: 0.5 },
-            { text: total, align: "RIGHT", width: 0.5 }
+            { text: total || '0', align: "RIGHT", width: 0.5 }
         ]);
         printer.tableCustom([
             { text: "Tunai", align: "LEFT", width: 0.5 },
-            { text: cash, align: "RIGHT", width: 0.5 }
+            { text: amount || '0', align: "RIGHT", width: 0.5 }
         ]);
 
         // Payment status
         printer.drawLine();
-        printer.println(payment_status);
+        printer.println(paymentStatus || '-');
         
         // Footer
         printer.drawLine();
@@ -124,11 +128,11 @@ app.post('/print', async (req, res) => {
 
         printer.cut();
         const printResult = await printer.execute();
-        console.log("Print success:", printResult);
-        return res.status(200).json({ message: 'Print successful' });
+        console.log(`Print order: ${orderNumber} success:`, printResult);
+        return res.status(200).json({ message: `Print order ${orderNumber} successful` });
     } catch (error) {
         console.error("Error printing receipt:", error);
-        return res.status(500).json({ message: JSON.stringify(err) });
+        return res.status(500).json({ message: JSON.stringify(error) });
     }
 });
 
