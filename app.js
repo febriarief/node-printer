@@ -20,6 +20,10 @@ if (CONFIG.paper_size === 48) {
 
 let printer = new ThermalPrinter(printerConfig);
 
+app.get('/get-printer', (req, res) => {
+    return res.status(200).json({ message: 'success', data: { name: CONFIG.printer_name } });
+});
+
 app.post('/print', async (req, res) => {
     const {trx_date, order_number, user, shipping_method, products, subtotal, tax, total, cash, payment_status} = req.body;
     
