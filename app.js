@@ -7,12 +7,21 @@ const PORT = 3000;
 
 app.use(express.json());
 
+function formatToRupiah(amount) {
+    amount = Number(amount);
+	if (isNaN(amount)) return '-';
+    const amountString = amount.toString();
+    const split = amountString.split('').reverse().join('').match(/.{1,3}/g);
+    const formatted = split.join('.').split('').reverse().join('');
+    return 'Rp ' + formatted;
+}
+
 app.get('/get-printer', (req, res) => {
 	return res.status(200).json({ message: 'success', data: { name: CONFIG.printer_name } });
 });
 
 app.post('/print', async (req, res) => {
-	const {storeName, phone, storeAddress, date, orderNumber, user, typeOrder, items, subtotal, tax, total, amount, paymentStatus} = req.body;
+	const {storeName, phone, storeAddress, date, orderNumber, receiver, name, typeOrder, items, subtotal, disc, tax, total, amount, paymentMethod, change, paymentStatus} = req.body;
 	
 	const dateObj = new Date(date);
 	const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -46,12 +55,8 @@ app.post('/print', async (req, res) => {
 		
 		// Header
 		printer.alignCenter();
-		// await printer.printImage('./assets/logo.png');
-		// printer.println(\n${CONFIG.merchant_name});
 		printer.println(`${(storeName || '-')}`);
-		// printer.println(${CONFIG.merchant_address});
 		printer.println(storeAddress || '-');
-		// printer.println(${CONFIG.merchant_phone});
 		printer.println(phone || '-');
 
 		// Order detail
@@ -66,12 +71,11 @@ app.post('/print', async (req, res) => {
 		]);
 		printer.tableCustom([
 			{ text: "Kasir", align: "LEFT", width: 0.5 },
-			// { text: user, align: "RIGHT", width: 0.5 }
-			{ text: '-', align: "RIGHT", width: 0.5 }
+			{ text: receiver || '-', align: "RIGHT", width: 0.5 }
 		]);
 		printer.tableCustom([
 			{ text: "Pelanggan", align: "LEFT", width: 0.5 },
-			{ text: "-", align: "RIGHT", width: 0.5 }
+			{ text: name || '-', align: "RIGHT", width: 0.5 }
 		]);
 
 		// Trx type
@@ -81,16 +85,34 @@ app.post('/print', async (req, res) => {
 		// Items
 		printer.drawLine();
 		(items || []).forEach(product => {
-			const { name, qty, price } = product;
+			const { name, qty, price, discount, discount_type } = product;
 			const total = qty * price;
 			printer.tableCustom([
 				{ text: `${(name || '-')}`, align: "LEFT", width: 0.5 },
 				{ text: " ", align: "RIGHT", width: 0.5 }
 			]);
 			printer.tableCustom([
-				{ text: `${(qty || '0')}x ${(price || '0')}`, align: "LEFT", width: 0.5 },
-				{ text: total, align: "RIGHT", width: 0.5 }
+				{ text: `${(qty || '0')}x ${formatToRupiah(price || 0)}`, align: "LEFT", width: 0.5 },
+				{ text: formatToRupiah(total), align: "RIGHT", width: 0.5 }
 			]);
+			
+			// Discount
+			if (discount && discount !== "") {
+				let discText = `Diskon ${discount} ${discount_type === 'percent' ? '%' : ''}`;
+				let discValue = 0;
+				if (discount_type === 'percent') {
+					discText = `Diskon ${discount}%`;
+					discValue = Number(price) - (Number(discount) / 100 * Number(price));
+				} else {
+					discText = `Diskon ${discount}`;
+					discValue = Number(price) - Number(discount);
+				}
+
+				printer.tableCustom([
+					{ text: discText, align: "LEFT", width: 0.5 },
+					{ text: formatToRupiah(discValue), align: "RIGHT", width: 0.5 }
+				]);
+			}
 
 			// Spacer per item
 			printer.tableCustom([
@@ -104,28 +126,45 @@ app.post('/print', async (req, res) => {
 		// Price
 		printer.tableCustom([
 			{ text: "Subtotal", align: "LEFT", width: 0.5 },
-			{ text: subtotal || '0', align: "RIGHT", width: 0.5 }
+			{ text: formatToRupiah(subtotal || 0), align: "RIGHT", width: 0.5 }
 		]);
-		printer.tableCustom([
-			{ text: "Pajak (10%)", align: "LEFT", width: 0.5 },
-			{ text: tax || '0', align: "RIGHT", width: 0.5 }
-		]);
+		
+		if (disc && Number(disc) !== 0) {
+			printer.tableCustom([
+				{ text: "Diskon", align: "LEFT", width: 0.5 },
+				{ text: formatToRupiah(disc || 0), align: "RIGHT", width: 0.5 }
+			]);
+		}
+
+		if (tax && Number(tax) !== 0) {
+			printer.tableCustom([
+				{ text: "Pajak (10%)", align: "LEFT", width: 0.5 },
+				{ text: formatToRupiah(tax || 0), align: "RIGHT", width: 0.5 }
+			]);
+		}
+		
 		printer.tableCustom([
 			{ text: "Total", align: "LEFT", width: 0.5 },
-			{ text: total || '0', align: "RIGHT", width: 0.5 }
-		]);
-		printer.tableCustom([
-			{ text: "Tunai", align: "LEFT", width: 0.5 },
-			{ text: amount || '0', align: "RIGHT", width: 0.5 }
+			{ text: formatToRupiah(total || 0), align: "RIGHT", width: 0.5 }
 		]);
 
-		// Payment status
+		printer.tableCustom([
+			{ text: paymentMethod, align: "LEFT", width: 0.5 },
+			{ text: formatToRupiah(amount || 0), align: "RIGHT", width: 0.5 }
+		]);
+
+		printer.drawLine();
+		printer.tableCustom([
+			{ text: 'Kembalian', align: "LEFT", width: 0.5 },
+			{ text: formatToRupiah(change || 0), align: "RIGHT", width: 0.5 }
+		]);
+
 		printer.drawLine();
 		printer.println(paymentStatus || '-');
 		
 		// Footer
 		printer.drawLine();
-		printer.println("Terima Kasih Atas Kunjungan Anda");
+		printer.println(CONFIG.footer);
 
 		printer.cut();
 		const printResult = await printer.execute();
