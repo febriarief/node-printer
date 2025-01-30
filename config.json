@@ -1,7 +1,9 @@
 {
     "printer_name" : "PrinterBluetooth",
-    "paper_size" : 58,
+    "paper_size" : 48,
+    "merchant_logo": "./assets/logo.png",
     "merchant_name": "DION Transport",
     "merchant_address": "Jl. Cemara No. 27 Kalipasir",
-    "merchant_phone": "08123456789"
+    "merchant_phone": "08123456789",
+    "footer": ""
 }

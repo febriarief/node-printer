@@ -21,7 +21,7 @@ app.get('/get-printer', (req, res) => {
 });
 
 app.post('/print', async (req, res) => {
-	const {storeName, phone, storeAddress, date, orderNumber, receiver, name, typeOrder, items, subtotal, disc, tax, total, amount, paymentMethod, change, paymentStatus} = req.body;
+	const {storeName, phone, storeAddress, date, orderNumber, receiver, name, tableNumber, typeOrder, items, subtotal, discount, taxName, tax, total, amount, paymentMethod, change, paymentStatus} = req.body;
 	
 	const dateObj = new Date(date);
 	const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -33,19 +33,19 @@ app.post('/print', async (req, res) => {
 	const parsedTrxDate = `${day} ${month} ${year}`;
 	const parsedTrxTime = dateObj.toTimeString().split(' ')[0];
 
+    let printerConfig = {
+        type: PrinterTypes.EPSON,
+        interface: `printer:${CONFIG.printer_name}`,
+        driver: require('@thiagoelg/node-printer')
+    }
+
+    if (CONFIG.paper_size === 48) {
+        printerConfig['width'] = 30;
+    }
+
+    let printer = new ThermalPrinter(printerConfig);
+
 	try {
-		let printerConfig = {
-			type: PrinterTypes.EPSON,
-			interface: `printer:${CONFIG.printer_name}`,
-			driver: require('@thiagoelg/node-printer')
-		}
-
-		if (CONFIG.paper_size === 48) {
-			printerConfig['width'] = 30;
-		}
-
-		let printer = new ThermalPrinter(printerConfig);
-
 		const isConnected = await printer.isPrinterConnected();
 		if (!isConnected) {
 			console.error('Printer is not connected');
@@ -55,6 +55,8 @@ app.post('/print', async (req, res) => {
 		
 		// Header
 		printer.alignCenter();
+        await printer.printImage(CONFIG.merchant_logo);
+		printer.println(``);
 		printer.println(`${(storeName || '-')}`);
 		printer.println(storeAddress || '-');
 		printer.println(phone || '-');
@@ -74,8 +76,12 @@ app.post('/print', async (req, res) => {
 			{ text: receiver || '-', align: "RIGHT", width: 0.5 }
 		]);
 		printer.tableCustom([
-			{ text: "Pelanggan", align: "LEFT", width: 0.5 },
+			{ text: "ID Pelanggan", align: "LEFT", width: 0.5 },
 			{ text: name || '-', align: "RIGHT", width: 0.5 }
+		]);
+		printer.tableCustom([
+			{ text: "No Meja", align: "LEFT", width: 0.5 },
+			{ text: tableNumber || '-', align: "RIGHT", width: 0.5 }
 		]);
 
 		// Trx type
@@ -85,34 +91,33 @@ app.post('/print', async (req, res) => {
 		// Items
 		printer.drawLine();
 		(items || []).forEach(product => {
-			const { name, qty, price, discount, discount_type } = product;
+			const { name, qty, price, discount, variants, servers_ids } = product;
 			const total = qty * price;
 			printer.tableCustom([
-				{ text: `${(name || '-')}`, align: "LEFT", width: 0.5 },
-				{ text: " ", align: "RIGHT", width: 0.5 }
-			]);
-			printer.tableCustom([
-				{ text: `${(qty || '0')}x ${formatToRupiah(price || 0)}`, align: "LEFT", width: 0.5 },
-				{ text: formatToRupiah(total), align: "RIGHT", width: 0.5 }
+				{ text: `${(qty || '0')}x `, align: "LEFT", width: 0.1 },
+				{ text: `${name}`, align: "LEFT", width: 0.4 },
+                { text: formatToRupiah(total), align: "RIGHT", width: 0.5 }
 			]);
 			
-			// Discount
-			if (discount && discount !== "") {
-				let discText = `Diskon ${discount} ${discount_type === 'percent' ? '%' : ''}`;
-				let discValue = 0;
-				if (discount_type === 'percent') {
-					discText = `Diskon ${discount}%`;
-					discValue = Number(price) - (Number(discount) / 100 * Number(price));
-				} else {
-					discText = `Diskon ${discount}`;
-					discValue = Number(price) - Number(discount);
-				}
+            printer.alignLeft();
 
-				printer.tableCustom([
-					{ text: discText, align: "LEFT", width: 0.5 },
-					{ text: formatToRupiah(discValue), align: "RIGHT", width: 0.5 }
-				]);
-			}
+            // Variants
+            (variants || []).forEach(obj => {
+                printer.println(`    ${obj.value} +${obj.price}`);
+            });
+            
+            // PIC
+            (servers_ids || []).forEach(obj => {
+                printer.println(` -${obj.fulname}`);
+            });
+
+			// Discount
+            (discount || []).forEach(obj => {    
+                printer.tableCustom([
+                    { text: obj.name, align: "LEFT", width: 0.5 },
+                    { text: `-${formatToRupiah(obj.value)}`, align: "RIGHT", width: 0.5 }
+                ]);
+            });
 
 			// Spacer per item
 			printer.tableCustom([
@@ -129,16 +134,16 @@ app.post('/print', async (req, res) => {
 			{ text: formatToRupiah(subtotal || 0), align: "RIGHT", width: 0.5 }
 		]);
 		
-		if (disc && Number(disc) !== 0) {
-			printer.tableCustom([
-				{ text: "Diskon", align: "LEFT", width: 0.5 },
-				{ text: formatToRupiah(disc || 0), align: "RIGHT", width: 0.5 }
-			]);
-		}
+        (discount || []).forEach(obj => {    
+            printer.tableCustom([
+                { text: obj.name, align: "LEFT", width: 0.5 },
+                { text: `-${formatToRupiah(obj.value)}`, align: "RIGHT", width: 0.5 }
+            ]);
+        });
 
 		if (tax && Number(tax) !== 0) {
 			printer.tableCustom([
-				{ text: "Pajak (10%)", align: "LEFT", width: 0.5 },
+				{ text: `${taxName}`, align: "LEFT", width: 0.5 },
 				{ text: formatToRupiah(tax || 0), align: "RIGHT", width: 0.5 }
 			]);
 		}
@@ -160,6 +165,7 @@ app.post('/print', async (req, res) => {
 		]);
 
 		printer.drawLine();
+        printer.alignCenter();
 		printer.println(paymentStatus || '-');
 		
 		// Footer
